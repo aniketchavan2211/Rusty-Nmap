@@ -1,0 +1,76 @@
+use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::tcp::{TcpFlags, TcpPacket, MutableTcpPacket};
+use pnet::transport::{transport_channel, TransportChannelType, TransportProtocol};
+use std::net::IpAddr;
+use std::time::Duration;
+use rand::random;
+
+pub async fn syn_scan(target: &str, ports: Vec<u16>, verbose: bool, quiet: bool) {
+    println!("[*] SYN Scan: {}", target);
+
+    // Create raw socket
+    let (mut tx, mut rx) = match transport_channel(
+        4096,
+        TransportChannelType::Layer4(TransportProtocol::Ipv4(IpNextHeaderProtocols::Tcp)),
+    ) {
+        Ok((tx, rx)) => (tx, rx),
+        Err(e) => {
+            eprintln!("[!] Failed to create raw socket: {}", e);
+            if verbose {
+                eprintln!("[!] Note: SYN scan requires root privileges on most systems");
+            }
+            return;
+        }
+    };
+
+    let target_ip: IpAddr = match target.parse() {
+        Ok(ip) => ip,
+        Err(_) => {
+            eprintln!("[!] Invalid target IP address");
+            return;
+        }
+    };
+
+    for port in ports {
+        let mut tcp_buffer = [0u8; 20];
+        let mut tcp_packet = MutableTcpPacket::new(&mut tcp_buffer).unwrap();
+
+        // Configure TCP header
+        tcp_packet.set_source(random::<u16>());
+        tcp_packet.set_destination(port);
+        tcp_packet.set_sequence(random::<u32>());
+        tcp_packet.set_acknowledgement(0);
+        tcp_packet.set_window(5840);
+        tcp_packet.set_data_offset(5);
+        tcp_packet.set_flags(TcpFlags::SYN);
+        tcp_packet.set_urgent_ptr(0);
+
+        // Send packet
+        if let Err(e) = tx.send_to(tcp_packet.to_immutable(), target_ip) {
+            if verbose && !quiet {
+                eprintln!("[-] Error sending to port {}: {}", port, e);
+            }
+            continue;
+        }
+
+        // Check for response with timeout
+        match rx.next_timeout(Duration::from_secs(1)) {
+            Ok(Some((packet, _))) => {
+                if let Some(tcp_response) = TcpPacket::new(&packet) {
+                    if tcp_response.get_flags() == (TcpFlags::SYN | TcpFlags::ACK) {
+                        println!("[+] Port {:>5} OPEN", port);
+                    } else if tcp_response.get_flags() == (TcpFlags::RST | TcpFlags::ACK) {
+                        if verbose && !quiet {
+                            println!("[-] Port {:>5} CLOSED", port);
+                        }
+                    }
+                }
+            }
+            Ok(None) | Err(_) => {
+                if verbose && !quiet {
+                    println!("[?] Port {:>5} FILTERED (no response)", port);
+                }
+            }
+        }
+    }
+}

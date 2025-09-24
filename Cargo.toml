@@ -1,0 +1,13 @@
+[package]
+name = "rusty-nmap"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.41"
+clap = { version = "4.5.40", features = ["derive"] }
+ipnetwork = "0.21.1"
+tokio = { version = "1.38", features = ["full"] }
+futures = "0.3.30" 
+pnet = "0.35.0"
+rand = "0.9.1"
