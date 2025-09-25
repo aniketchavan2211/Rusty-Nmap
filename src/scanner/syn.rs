@@ -1,14 +1,14 @@
+use pnet::packet::tcp::{MutableTcpPacket, TcpFlags, TcpPacket};
 use pnet::packet::ip::IpNextHeaderProtocols;
-use pnet::packet::tcp::{TcpFlags, TcpPacket, MutableTcpPacket};
 use pnet::transport::{transport_channel, TransportChannelType, TransportProtocol};
+use rand::random;
 use std::net::IpAddr;
 use std::time::Duration;
-use rand::random;
+use crate::utils::packet_receiver::PacketReceiver;
 
 pub async fn syn_scan(target: &str, ports: Vec<u16>, verbose: bool, quiet: bool) {
     println!("[*] SYN Scan: {}", target);
 
-    // Create raw socket
     let (mut tx, mut rx) = match transport_channel(
         4096,
         TransportChannelType::Layer4(TransportProtocol::Ipv4(IpNextHeaderProtocols::Tcp)),
@@ -16,26 +16,17 @@ pub async fn syn_scan(target: &str, ports: Vec<u16>, verbose: bool, quiet: bool)
         Ok((tx, rx)) => (tx, rx),
         Err(e) => {
             eprintln!("[!] Failed to create raw socket: {}", e);
-            if verbose {
-                eprintln!("[!] Note: SYN scan requires root privileges on most systems");
-            }
             return;
         }
     };
 
-    let target_ip: IpAddr = match target.parse() {
-        Ok(ip) => ip,
-        Err(_) => {
-            eprintln!("[!] Invalid target IP address");
-            return;
-        }
-    };
+    let target_ip: IpAddr = target.parse().expect("Invalid IP address");
+    let mut receiver = PacketReceiver::new(&mut rx, Duration::from_secs(1));
 
     for port in ports {
         let mut tcp_buffer = [0u8; 20];
         let mut tcp_packet = MutableTcpPacket::new(&mut tcp_buffer).unwrap();
 
-        // Configure TCP header
         tcp_packet.set_source(random::<u16>());
         tcp_packet.set_destination(port);
         tcp_packet.set_sequence(random::<u32>());
@@ -45,7 +36,6 @@ pub async fn syn_scan(target: &str, ports: Vec<u16>, verbose: bool, quiet: bool)
         tcp_packet.set_flags(TcpFlags::SYN);
         tcp_packet.set_urgent_ptr(0);
 
-        // Send packet
         if let Err(e) = tx.send_to(tcp_packet.to_immutable(), target_ip) {
             if verbose && !quiet {
                 eprintln!("[-] Error sending to port {}: {}", port, e);
@@ -53,24 +43,18 @@ pub async fn syn_scan(target: &str, ports: Vec<u16>, verbose: bool, quiet: bool)
             continue;
         }
 
-        // Check for response with timeout
-        match rx.next_timeout(Duration::from_secs(1)) {
-            Ok(Some((packet, _))) => {
-                if let Some(tcp_response) = TcpPacket::new(&packet) {
-                    if tcp_response.get_flags() == (TcpFlags::SYN | TcpFlags::ACK) {
-                        println!("[+] Port {:>5} OPEN", port);
-                    } else if tcp_response.get_flags() == (TcpFlags::RST | TcpFlags::ACK) {
-                        if verbose && !quiet {
-                            println!("[-] Port {:>5} CLOSED", port);
-                        }
+        if let Some(packet_bytes) = receiver.recv() {
+            if let Some(tcp_resp) = TcpPacket::new(&packet_bytes) {
+                if tcp_resp.get_flags() == (TcpFlags::SYN | TcpFlags::ACK) {
+                    println!("[+] Port {:>5} OPEN", port);
+                } else if tcp_resp.get_flags() == (TcpFlags::RST | TcpFlags::ACK) {
+                    if verbose && !quiet {
+                        println!("[-] Port {:>5} CLOSED", port);
                     }
                 }
             }
-            Ok(None) | Err(_) => {
-                if verbose && !quiet {
-                    println!("[?] Port {:>5} FILTERED (no response)", port);
-                }
-            }
+        } else if verbose && !quiet {
+            println!("[?] Port {:>5} FILTERED (no response)", port);
         }
     }
 }

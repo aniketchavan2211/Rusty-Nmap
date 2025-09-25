@@ -8,11 +8,11 @@ use utils::port_parser::parse_ports;
 use scanner::ping::is_host_up;
 use scanner::tcp::scan_tcp;
 use scanner::udp::scan_udp;
-use scanner::syn::syn_scan;
-use scanner::ack::ack_scan;
-use scanner::fin::fin_scan;
-use scanner::xmas::xmas_scan;
-use scanner::null::null_scan;
+// use scanner::syn::syn_scan;
+// use scanner::ack::ack_scan;
+// use scanner::fin::fin_scan;
+// use scanner::xmas::xmas_scan;
+// use scanner::null::null_scan;
 
 use chrono::Local;
 use std::time::Instant;
@@ -72,19 +72,25 @@ async fn main() {
         println!("Host is up ({:.7}s latency).", latency);
         
         // TCP Scans
-        if args.syn_scan {
-            syn_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
-        } else if args.ack_scan {
-            ack_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
-        } else if args.fin_scan {
-            fin_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
-        } else if args.xmas_scan {
-            xmas_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
-        } else if args.null_scan {
-            null_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
-        } else if args.tcp_scan {
+
+        if args.tcp_scan {
             scan_tcp(target, tcp_ports.clone(), args.verbose, args.quiet).await;
         }
+
+        // Temp disable advanced TCP scans
+        // if args.syn_scan {
+        //     syn_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // } else if args.ack_scan {
+        //     ack_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // } else if args.fin_scan {
+        //     fin_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // } else if args.xmas_scan {
+        //     xmas_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // } else if args.null_scan {
+        //     null_scan(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // } else if args.tcp_scan {
+        //     scan_tcp(target, tcp_ports.clone(), args.verbose, args.quiet).await;
+        // }
 
         // UDP Scan
         if args.udp_scan {
