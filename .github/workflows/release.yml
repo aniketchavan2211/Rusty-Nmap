@@ -43,7 +43,7 @@ jobs:
           shasum -a 256 * > SHA256SUMS.txt
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: rusty-nmap-${{ runner.os }}
           path: release/
