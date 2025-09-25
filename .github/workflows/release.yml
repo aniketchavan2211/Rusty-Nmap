@@ -42,25 +42,6 @@ jobs:
           fi
         shell: bash
 
-      - name: Generate SHA256 checksums (Linux/macOS)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          cd release
-          for f in *; do
-            shasum -a 256 "$f" >> SHA256SUMS.txt
-          done
-
-      - name: Generate SHA256 checksums (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cd release
-          Get-ChildItem * | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
-            "$hash  $($_.Name)" | Out-File -Append SHA256SUMS.txt
-          }
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -79,6 +60,11 @@ jobs:
         with:
           path: release_artifacts
 
+      - name: Generate single SHA256SUMS.txt
+        run: |
+          cd release_artifacts
+          sha256sum */* > SHA256SUMS.txt
+
       - name: Create GitHub Release Draft
         uses: softprops/action-gh-release@v1
         with:
@@ -88,9 +74,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Upload binaries to release
+      - name: Upload binaries + checksum to release
         uses: softprops/action-gh-release@v1
         with:
-          files: release_artifacts/**/*
+          files: |
+            release_artifacts/*/*
+            release_artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
