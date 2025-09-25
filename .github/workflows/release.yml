@@ -77,11 +77,10 @@ jobs:
           tag_name: ${{ github.ref_name }}
           draft: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
       - name: Upload binaries to release
         uses: softprops/action-gh-release@v1
         with:
           files: release_artifacts/release/*
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
