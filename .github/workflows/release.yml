@@ -39,9 +39,18 @@ jobs:
         shell: bash
 
       - name: Generate SHA256 checksums
+        shell: bash
         run: |
           cd release
-          shasum -a 256 * > SHA256SUMS.txt
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # Use certutil for Windows
+            for f in *.exe; do
+              certutil -hashfile "$f" SHA256 >> SHA256SUMS.txt
+            done
+          else
+            # Linux/macOS
+            shasum -a 256 * > SHA256SUMS.txt
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
