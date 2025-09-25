@@ -23,12 +23,11 @@ jobs:
           override: true
 
       - name: Build release binary
-        shell: bash
         run: |
           mkdir -p release
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cargo build --release --target x86_64-pc-windows-gnu
-            cp target/x86_64-pc-windows-gnu/release/rusty-nmap.exe release/
+            cargo build --release
+            cp target/release/rusty-nmap.exe release/
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             cargo build --release --target x86_64-unknown-linux-gnu
             cp target/x86_64-unknown-linux-gnu/release/rusty-nmap release/
@@ -37,6 +36,7 @@ jobs:
             cargo build --release
             cp target/release/rusty-nmap release/
           fi
+        shell: bash
 
       - name: Generate SHA256 checksums
         run: |
