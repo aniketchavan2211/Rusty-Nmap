@@ -22,19 +22,23 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build release binary
+      - name: Build & Package
         run: |
           mkdir -p release
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cargo build --release
-            cp target/release/rusty-nmap.exe release/
-          elif [[ "${{ runner.os }}" == "Linux" ]]; then
+          VERSION=${GITHUB_REF_NAME#v}
+
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
             cargo build --release --target x86_64-unknown-linux-gnu
-            cp target/x86_64-unknown-linux-gnu/release/rusty-nmap release/
+            tar -czf release/rusty-nmap-${VERSION}-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release rusty-nmap
+
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo build --release
+            powershell Compress-Archive -Path target/release/rusty-nmap.exe -DestinationPath release/rusty-nmap-${VERSION}-windows-x86_64.zip
+
           else
             # macOS
             cargo build --release
-            cp target/release/rusty-nmap release/
+            tar -czf release/rusty-nmap-${VERSION}-macos-x86_64.tar.gz -C target/release rusty-nmap
           fi
         shell: bash
 
@@ -43,13 +47,15 @@ jobs:
         run: |
           cd release
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Use certutil for Windows
-            for f in *.exe; do
-              certutil -hashfile "$f" SHA256 >> SHA256SUMS.txt
+            # Windows zip archive
+            for f in *.zip; do
+              certutil -hashfile "$f" SHA256 | findstr /v "hash" | findstr /r "^[0-9A-F]" > "${f}.sha256"
             done
           else
-            # Linux/macOS
-            shasum -a 256 * > SHA256SUMS.txt
+            # Linux/macOS tarballs
+            for f in *; do
+              shasum -a 256 "$f" > "${f}.sha256"
+            done
           fi
 
       - name: Upload artifacts
@@ -78,9 +84,10 @@ jobs:
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
       - name: Upload binaries to release
         uses: softprops/action-gh-release@v1
         with:
-          files: release_artifacts/release/*
+          files: release_artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
