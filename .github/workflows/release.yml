@@ -42,21 +42,24 @@ jobs:
           fi
         shell: bash
 
-      - name: Generate SHA256 checksums
+      - name: Generate SHA256 checksums (Linux/macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd release
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # Windows zip archive
-            for f in *.zip; do
-              certutil -hashfile "$f" SHA256 | findstr /v "hash" | findstr /r "^[0-9A-F]" > "${f}.sha256"
-            done
-          else
-            # Linux/macOS tarballs
-            for f in *; do
-              shasum -a 256 "$f" > "${f}.sha256"
-            done
-          fi
+          for f in *; do
+            shasum -a 256 "$f" >> SHA256SUMS.txt
+          done
+
+      - name: Generate SHA256 checksums (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd release
+          Get-ChildItem * | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+            "$hash  $($_.Name)" | Out-File -Append SHA256SUMS.txt
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
