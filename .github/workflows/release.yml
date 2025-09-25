@@ -23,6 +23,7 @@ jobs:
           override: true
 
       - name: Build release binary
+        shell: bash
         run: |
           mkdir -p release
           if [[ "${{ runner.os }}" == "Windows" ]]; then
