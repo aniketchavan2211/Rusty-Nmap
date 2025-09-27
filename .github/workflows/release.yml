@@ -22,22 +22,45 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install Android NDK (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+          wget https://dl.google.com/android/repository/android-ndk-r26b-linux.zip
+          unzip -q android-ndk-r26b-linux.zip
+          mv android-ndk-r26b $HOME/android-ndk
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk" >> $GITHUB_ENV
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk
+
       - name: Build & Package
         run: |
           mkdir -p release
           VERSION=${GITHUB_REF_NAME#v}
 
           if [[ "${{ runner.os }}" == "Linux" ]]; then
+            # Linux x86_64
             cargo build --release --target x86_64-unknown-linux-gnu
+            strip target/x86_64-unknown-linux-gnu/release/rusty-nmap
             tar -czf release/rusty-nmap-${VERSION}-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release rusty-nmap
+
+            # Android aarch64 (Termux)
+            cargo ndk -t arm64-v8a -o ./release build --release
+            strip release/rusty-nmap
+            tar -czf release/rusty-nmap-${VERSION}-android-aarch64.tar.gz -C release rusty-nmap
+            rm release/rusty-nmap
 
           elif [[ "${{ runner.os }}" == "Windows" ]]; then
             cargo build --release
+            llvm-strip target/release/rusty-nmap.exe || true
             powershell Compress-Archive -Path target/release/rusty-nmap.exe -DestinationPath release/rusty-nmap-${VERSION}-windows-x86_64.zip
 
           else
             # macOS
             cargo build --release
+            strip target/release/rusty-nmap || true
             tar -czf release/rusty-nmap-${VERSION}-macos-x86_64.tar.gz -C target/release rusty-nmap
           fi
         shell: bash
@@ -65,18 +88,26 @@ jobs:
           cd release_artifacts
           sha256sum */* > SHA256SUMS.txt
 
-      - name: Create GitHub Release Draft
+      - name: Create versioned GitHub Release Draft
         uses: softprops/action-gh-release@v1
         with:
           name: ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           draft: true
+          files: |
+            release_artifacts/*/*
+            release_artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Upload binaries + checksum to release
+      - name: Update "latest" GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          name: latest
+          tag_name: latest
+          draft: false
+          prerelease: false
+          overwrite: true
           files: |
             release_artifacts/*/*
             release_artifacts/SHA256SUMS.txt
