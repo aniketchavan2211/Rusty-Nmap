@@ -3,7 +3,7 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'   # Trigger on version tags like v1.0.0
+      - 'v*'  # Trigger on version tags like v1.0.0
 
 jobs:
   build:
@@ -22,42 +22,45 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install cargo-ndk for Android (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo install cargo-ndk
+
       - name: Build & Package
         run: |
           mkdir -p release
           VERSION=${GITHUB_REF_NAME#v}
 
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            # --- Linux x86_64 ---
+          if [[ "${{ matrix.os }}" == "Linux" ]]; then
+            # Linux x86_64
             cargo build --release --target x86_64-unknown-linux-gnu
             strip target/x86_64-unknown-linux-gnu/release/rusty-nmap
             tar -czf release/rusty-nmap-${VERSION}-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release rusty-nmap
 
-            # --- Android aarch64 (Termux) ---
+            # Android aarch64 (Termux)
             rustup target add aarch64-linux-android
             export ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/27.3.13750724
             export CC_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+            export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
             cargo build --release --target aarch64-linux-android
             tar -czf release/rusty-nmap-${VERSION}-android-aarch64.tar.gz -C target/aarch64-linux-android/release rusty-nmap
 
-          elif [[ "${{ runner.os }}" == "Windows" ]]; then
-            # --- Windows x86_64 ---
+          elif [[ "${{ matrix.os }}" == "Windows" ]]; then
             cargo build --release
-            llvm-strip target/release/rusty-nmap.exe || true
             powershell Compress-Archive -Path target/release/rusty-nmap.exe -DestinationPath release/rusty-nmap-${VERSION}-windows-x86_64.zip
 
           else
-            # --- macOS x86_64 ---
+            # macOS
             cargo build --release
             strip target/release/rusty-nmap || true
             tar -czf release/rusty-nmap-${VERSION}-macos-x86_64.tar.gz -C target/release rusty-nmap
-          fi
         shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: rusty-nmap-${{ runner.os }}
+          name: release-${{ matrix.os }}
           path: release/
 
   release:
@@ -67,15 +70,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Download build artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: release_artifacts
 
-      - name: Generate single SHA256SUMS.txt
+      - name: Generate SHA256SUMS.txt
         run: |
           cd release_artifacts
-          find . -type f -name "*.tar.gz" -o -name "*.zip" | sort | xargs sha256sum > SHA256SUMS.txt
+          find . -type f -name '*.tar.gz' -o -name '*.zip' | sort | xargs sha256sum > SHA256SUMS.txt
 
       - name: Create GitHub Release Draft
         uses: softprops/action-gh-release@v1
@@ -90,7 +93,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release_artifacts/*/*
+            release_artifacts/**/* 
             release_artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
