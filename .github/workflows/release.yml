@@ -3,7 +3,7 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*'   # Trigger on version tags like v1.0.0
 
 jobs:
   build:
@@ -27,10 +27,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
-          curl -L https://dl.google.com/android/repository/android-ndk-r27b-linux.zip -o android-ndk.zip
-          unzip android-ndk.zip
-          mv android-ndk-r27b $HOME/android-ndk
-          rm android-ndk.zip
+          curl -sSL https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -o android-ndk.zip
+          unzip -q android-ndk.zip
+          echo "$PWD/android-ndk-r25b" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$PWD/android-ndk-r25b" >> $GITHUB_ENV
 
       - name: Build & Package
         shell: bash
@@ -39,48 +39,33 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
 
           if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-              # Linux x86_64
-              cargo build --release --target x86_64-unknown-linux-gnu
-              strip target/x86_64-unknown-linux-gnu/release/rusty-nmap
-              tar -czf release/rusty-nmap-${VERSION}-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release rusty-nmap
+            # Linux x86_64
+            cargo build --release --target x86_64-unknown-linux-gnu
+            strip target/x86_64-unknown-linux-gnu/release/rusty-nmap
+            tar -czf release/rusty-nmap-${VERSION}-linux-x86_64.tar.gz -C target/x86_64-unknown-linux-gnu/release rusty-nmap
 
-              # Android aarch64 (Termux)
-              rustup target add aarch64-linux-android
-              export ANDROID_NDK_HOME=$HOME/android-ndk
-              export PATH=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
-              export CC_aarch64_linux_android=aarch64-linux-android21-clang
-              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
-              cargo build --release --target aarch64-linux-android
-              tar -czf release/rusty-nmap-${VERSION}-android-aarch64.tar.gz -C target/aarch64-linux-android/release rusty-nmap
+            # Android aarch64 (Termux)
+            rustup target add aarch64-linux-android
+            export ANDROID_NDK_HOME=$ANDROID_NDK_HOME
+            export CC_aarch64_linux_android=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+            export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$CC_aarch64_linux_android
+            cargo build --release --target aarch64-linux-android
+            tar -czf release/rusty-nmap-${VERSION}-android-aarch64.tar.gz -C target/aarch64-linux-android/release rusty-nmap
 
           elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-              cargo build --release
-              powershell Compress-Archive -Path target/release/rusty-nmap.exe -DestinationPath release/rusty-nmap-${VERSION}-windows-x86_64.zip
+            cargo build --release
+            powershell Compress-Archive -Path target/release/rusty-nmap.exe -DestinationPath release/rusty-nmap-${VERSION}-windows-x86_64.zip
 
           else
-              # macOS
-              cargo build --release
-              strip target/release/rusty-nmap || true
-              tar -czf release/rusty-nmap-${VERSION}-macos-x86_64.tar.gz -C target/release rusty-nmap
-          fi
-
-      - name: Generate SHA256SUMS.txt
-        shell: bash
-        run: |
-          cd release
-          rm -f SHA256SUMS.txt
-          for f in *; do
-              if [[ "$f" == *.zip ]]; then
-                  certutil -hashfile "$f" SHA256 | grep -E '^[0-9A-F]' | awk '{print $1 "  " FILENAME}' FILENAME="$f" >> SHA256SUMS.txt
-              else
-                  shasum -a 256 "$f" >> SHA256SUMS.txt
-              fi
-          done
+            # macOS
+            cargo build --release
+            strip target/release/rusty-nmap || true
+            tar -czf release/rusty-nmap-${VERSION}-macos-x86_64.tar.gz -C target/release rusty-nmap
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts-${{ matrix.os }}
+          name: release-${{ matrix.os }}
           path: release/
 
   release:
@@ -95,6 +80,23 @@ jobs:
         with:
           path: release_artifacts
 
+      - name: Combine all binaries & generate SHA256SUMS.txt
+        shell: bash
+        run: |
+          mkdir -p release_combined
+          # Copy all binaries to one folder
+          cp release_artifacts/*/* release_combined/ 2>/dev/null || true
+          cd release_combined
+          rm -f SHA256SUMS.txt
+          for f in *; do
+            if [[ "$f" == *.zip ]]; then
+              # Windows zip
+              certutil -hashfile "$f" SHA256 | grep -E '^[0-9A-F]' | awk '{print $1 "  " FILENAME}' FILENAME="$f" >> SHA256SUMS.txt
+            else
+              shasum -a 256 "$f" >> SHA256SUMS.txt
+            fi
+          done
+
       - name: Create GitHub Release Draft
         uses: softprops/action-gh-release@v1
         with:
@@ -104,11 +106,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
-      - name: Upload binaries + checksums
+      - name: Upload binaries + checksum to release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            release_artifacts/*/*
-            release_artifacts/*/SHA256SUMS.txt
+          files: release_combined/*
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
